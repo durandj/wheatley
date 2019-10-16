@@ -7,6 +7,26 @@ import (
 // Status is the notification level.
 type Status int
 
+// NewStatus creates a new status from a string.
+func NewStatus(status string) Status {
+	switch status {
+	case "debug":
+		return StatusDebug
+
+	case "info":
+		return StatusInfo
+
+	case "warn":
+		return StatusWarn
+
+	case "error":
+		return StatusWarn
+
+	default:
+		return StatusInfo
+	}
+}
+
 func (status Status) String() string {
 	switch status {
 	case StatusDebug:
