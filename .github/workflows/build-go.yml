@@ -1,0 +1,32 @@
+name: Validate Golang code
+
+on:
+  - push:
+
+env:
+  GO111MODULE: 'on'
+
+jobs:
+  build:
+    name: Build application
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Golang
+        uses: actions/setup-go@v1
+        with:
+          go-version: '1.13.1'
+
+      - name: Clone repository
+        uses: actions/checkout@master
+
+      - name: Install golangci-lint
+        with:
+          LINT_VERSION: 1.21.0
+        run: wget --quiet --output-document - https://github.com/golangci/golangci-lint/releases/download/v${INPUT_LINT_VERSION}/golangci-lint-${INPUT_LINT_VERSION}-linux-amd64.tar.gz | tar --extract --verbose --gzip --strip-components 1 --exclude LICENSE --exclude README.md --directory /usr/local/bin
+golangci-lint-1.21.0-linux-amd64/golangci-lint
+
+      - name: Run linter
+        run: golangci-lint run
+
+      - name: Build
+        run: go build -o build/wheatley main.go
