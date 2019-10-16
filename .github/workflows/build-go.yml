@@ -1,7 +1,7 @@
 name: Validate Golang code
 
 on:
-  - push:
+  - push
 
 env:
   GO111MODULE: 'on'
