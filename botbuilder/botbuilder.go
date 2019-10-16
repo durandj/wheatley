@@ -23,28 +23,41 @@ var (
 
 // Bot models an assistant bot.
 type Bot struct {
-	name      string
-	ctx       context.Context
-	logger    *zap.SugaredLogger
-	notifiers []notifier.Notifier
+	name              string
+	ctx               context.Context
+	logger            *zap.SugaredLogger
+	notifiers         []notifier.Notifier
+	notificationLevel notifier.Status
+}
+
+// BotOpts are options used to configure a newly created bot.
+type BotOpts struct {
+	// Notifiers are things used to send notifications about things
+	// that have happened.
+	Notifiers []notifier.Notifier
+
+	// NotificationLevel is the minimum level of notifications that
+	// are allowed to be sent at a global level.
+	NotificationLevel notifier.Status
 }
 
 // NewBot creates a new bot instance.
-func NewBot(name string, notifiers []notifier.Notifier) (*Bot, error) {
+func NewBot(name string, opts BotOpts) (*Bot, error) {
 	logger, err := zap.NewProduction()
 	if err != nil {
 		return nil, fmt.Errorf("Unable to create logger for %s: %v", name, err)
 	}
 
-	if len(notifiers) == 0 {
+	if len(opts.Notifiers) == 0 {
 		logger.Warn("No notifiers were specified, no notifications will be sent")
 	}
 
 	bot := Bot{
-		name:      name,
-		ctx:       context.Background(),
-		logger:    logger.Sugar(),
-		notifiers: notifiers,
+		name:              name,
+		ctx:               context.Background(),
+		logger:            logger.Sugar(),
+		notifiers:         opts.Notifiers,
+		notificationLevel: opts.NotificationLevel,
 	}
 
 	return &bot, nil
@@ -61,10 +74,15 @@ func (bot *Bot) Start() {
 
 	<-signals
 
+	bot.logger.Infof("Stopping bot %s", bot.name)
 	bot.notifyDebug("Stopping bot", "Bot is being shutdown")
 }
 
 func (bot *Bot) notify(status notifier.Status, title string, body string) {
+	if status < bot.notificationLevel {
+		return
+	}
+
 	for _, n := range bot.notifiers {
 		err := n.SendNotification(
 			bot.ctx,
