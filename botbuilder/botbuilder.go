@@ -84,14 +84,14 @@ func (bot *Bot) notifyDebug(title string, body string) {
 	bot.notify(notifier.StatusDebug, title, body)
 }
 
-func (bot *Bot) notifyInfo(title string, body string) {
-	bot.notify(notifier.StatusInfo, title, body)
-}
+// func (bot *Bot) notifyInfo(title string, body string) {
+// 	bot.notify(notifier.StatusInfo, title, body)
+// }
 
-func (bot *Bot) notifyWarn(title string, body string) {
-	bot.notify(notifier.StatusWarn, title, body)
-}
+// func (bot *Bot) notifyWarn(title string, body string) {
+// 	bot.notify(notifier.StatusWarn, title, body)
+// }
 
-func (bot *Bot) notifyError(title string, body string) {
-	bot.notify(notifier.StatusError, title, body)
-}
+// func (bot *Bot) notifyError(title string, body string) {
+// 	bot.notify(notifier.StatusError, title, body)
+// }
