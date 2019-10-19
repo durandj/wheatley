@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
+	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 
 	"github.com/durandj/wheatley/botbuilder/notifier"
@@ -28,6 +30,10 @@ type Bot struct {
 	logger            *zap.SugaredLogger
 	notifiers         []notifier.Notifier
 	notificationLevel notifier.Status
+	cronScheduler     *cron.Cron
+	workQueue         *workQueue
+	taskLock          *sync.RWMutex
+	taskNotifier      *sync.Cond
 }
 
 // BotOpts are options used to configure a newly created bot.
@@ -52,12 +58,18 @@ func NewBot(name string, opts BotOpts) (*Bot, error) {
 		logger.Warn("No notifiers were specified, no notifications will be sent")
 	}
 
+	taskLock := sync.RWMutex{}
+
 	bot := Bot{
 		name:              name,
 		ctx:               context.Background(),
 		logger:            logger.Sugar(),
 		notifiers:         opts.Notifiers,
 		notificationLevel: opts.NotificationLevel,
+		cronScheduler:     cron.New(),
+		workQueue:         newWorkQueue(),
+		taskLock:          &taskLock,
+		taskNotifier:      sync.NewCond(taskLock.RLocker()),
 	}
 
 	return &bot, nil
@@ -68,14 +80,64 @@ func (bot *Bot) Start() {
 	bot.logger.Infof("Starting bot %s", bot.name)
 	bot.notifyDebug("Starting bot", "Bot is being started up")
 
-	signals := make(chan os.Signal, 1)
+	shouldStop := false
 
+	bot.taskLock.RLock()
+
+	taskWaitGroup := sync.WaitGroup{}
+
+	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	<-signals
+	go func() {
+		<-signals
+
+		shouldStop = true
+		bot.taskNotifier.Signal()
+	}()
+
+	bot.cronScheduler.Start()
+	for !shouldStop {
+		for !shouldStop && bot.workQueue.IsEmpty() {
+			bot.taskNotifier.Wait()
+		}
+
+		if shouldStop {
+			break
+		}
+
+		task := bot.workQueue.Pop()
+		taskWaitGroup.Add(1)
+		go func() {
+			defer taskWaitGroup.Done()
+
+			task.Handler()
+		}()
+	}
+	bot.cronScheduler.Stop()
+
+	bot.logger.Debug("Waiting for running tasks to complete")
+	taskWaitGroup.Wait()
 
 	bot.logger.Infof("Stopping bot %s", bot.name)
 	bot.notifyDebug("Stopping bot", "Bot is being shutdown")
+}
+
+// ScheduleTask schedules a task to run on a regular basis.
+func (bot *Bot) ScheduleTask(schedule string, task Task) {
+	_, err := bot.cronScheduler.AddFunc(schedule, func() {
+		bot.logger.Infof("Queuing task: %v", task)
+
+		bot.workQueue.Push(task)
+		bot.taskNotifier.Signal()
+	})
+
+	if err != nil {
+		bot.notifyError(
+			"Unable schedule task",
+			fmt.Sprintf("%s was unable to schedule '%s' task", bot.name, task.Name),
+		)
+	}
 }
 
 func (bot *Bot) notify(status notifier.Status, title string, body string) {
@@ -110,6 +172,6 @@ func (bot *Bot) notifyDebug(title string, body string) {
 // 	bot.notify(notifier.StatusWarn, title, body)
 // }
 
-// func (bot *Bot) notifyError(title string, body string) {
-// 	bot.notify(notifier.StatusError, title, body)
-// }
+func (bot *Bot) notifyError(title string, body string) {
+	bot.notify(notifier.StatusError, title, body)
+}
