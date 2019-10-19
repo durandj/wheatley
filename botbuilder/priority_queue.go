@@ -1,9 +1,5 @@
 package botbuilder
 
-import (
-	"container/heap"
-)
-
 type queueJob struct {
 	value    interface{}
 	priority int
@@ -12,10 +8,10 @@ type queueJob struct {
 
 type priorityQueue []*queueJob
 
-func newPriorityQueue() priorityQueue {
+func newPriorityQueue() *priorityQueue {
 	queue := make(priorityQueue, 0)
 
-	return queue
+	return &queue
 }
 
 func (queue priorityQueue) Len() int {
@@ -48,10 +44,4 @@ func (queue *priorityQueue) Pop() interface{} {
 	job.index = -1
 	*queue = oldQueue[0 : length-1]
 	return job.value
-}
-
-func (queue *priorityQueue) update(job *queueJob, value interface{}, priority int) {
-	job.value = value
-	job.priority = priority
-	heap.Fix(queue, job.index)
 }

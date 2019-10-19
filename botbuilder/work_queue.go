@@ -1,11 +1,12 @@
 package botbuilder
 
 import (
+	"container/heap"
 	"sync"
 )
 
 type workQueue struct {
-	priorityQueue priorityQueue
+	priorityQueue *priorityQueue
 	lock          sync.RWMutex
 }
 
@@ -20,14 +21,14 @@ func (queue *workQueue) Push(task Task) {
 	queue.lock.Lock()
 	defer queue.lock.Unlock()
 
-	queue.priorityQueue.Push(task)
+	heap.Push(queue.priorityQueue, task)
 }
 
 func (queue *workQueue) Pop() Task {
 	queue.lock.Lock()
 	defer queue.lock.Unlock()
 
-	return queue.priorityQueue.Pop().(Task)
+	return heap.Pop(queue.priorityQueue).(Task)
 }
 
 func (queue *workQueue) Len() int {
