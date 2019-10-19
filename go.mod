@@ -7,6 +7,7 @@ require (
 	github.com/gobuffalo/envy v1.7.1
 	github.com/logrusorgru/aurora v0.0.0-20190803045625-94edacc10f9b
 	github.com/pkg/errors v0.8.1 // indirect
+	github.com/robfig/cron/v3 v3.0.0
 	github.com/spf13/cobra v0.0.5
 	go.uber.org/atomic v1.4.0 // indirect
 	go.uber.org/multierr v1.2.0 // indirect

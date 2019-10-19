@@ -52,6 +52,16 @@ var rootCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		bot.ScheduleTask(
+			"* * * * *",
+			botbuilder.Task{
+				Name: "test",
+				Handler: func() {
+					fmt.Println("test")
+				},
+			},
+		)
+
 		bot.Start()
 	},
 }
