@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 
 	"github.com/gobuffalo/envy"
 	"github.com/logrusorgru/aurora"
@@ -14,6 +15,9 @@ import (
 )
 
 var (
+	notificationLevelPattern = regexp.MustCompile("^debug|info|warn|error$")
+
+	maxWorkers        int
 	notificationLevel string
 )
 
@@ -61,24 +65,24 @@ var rootCmd = &cobra.Command{
 				},
 			},
 		)
+		for i := 1; i <= 500; i++ {
+			bot.ScheduleTask(
+				fmt.Sprintf("* * * * */%d", i%10+1),
+				botbuilder.Task{
+					Name: fmt.Sprintf("test%d", i),
+					Handler: func() {
+						fmt.Println("test")
+					},
+				},
+			)
+		}
 
 		bot.Start()
 	},
 }
 
 func isNotificationLevelValid(notificationLevel string) bool {
-	switch notificationLevel {
-	case "debug":
-		return true
-	case "info":
-		return true
-	case "warn":
-		return true
-	case "error":
-		return true
-	default:
-		return false
-	}
+	return notificationLevelPattern.MatchString(notificationLevel)
 }
 
 func loadDotEnv() {
@@ -93,11 +97,19 @@ func loadDotEnv() {
 
 func init() {
 	flags := rootCmd.Flags()
+
 	flags.StringVar(
 		&notificationLevel,
 		"notification-level",
 		notifier.StatusInfo.String(),
 		"The threshold before sending a notification. Valid valuas: debug, info, warn, error",
+	)
+
+	flags.IntVar(
+		&maxWorkers,
+		"max-concurrency",
+		0,
+		"The maximum concurrent tasks, 0 means infinite",
 	)
 }
 

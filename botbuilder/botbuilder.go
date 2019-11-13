@@ -14,6 +14,10 @@ import (
 	"github.com/durandj/wheatley/botbuilder/notifier"
 )
 
+const (
+	defaultWorkerCount = 32
+)
+
 var (
 	statusImages = map[notifier.Status]string{
 		notifier.StatusDebug: "🚧",
@@ -31,9 +35,8 @@ type Bot struct {
 	notifiers         []notifier.Notifier
 	notificationLevel notifier.Status
 	cronScheduler     *cron.Cron
-	workQueue         *workQueue
-	taskLock          *sync.RWMutex
-	taskNotifier      *sync.Cond
+	workerCount       int
+	workQueue         chan Task
 }
 
 // BotOpts are options used to configure a newly created bot.
@@ -45,6 +48,10 @@ type BotOpts struct {
 	// NotificationLevel is the minimum level of notifications that
 	// are allowed to be sent at a global level.
 	NotificationLevel notifier.Status
+
+	// MaxConcurrency sets the maximum number of concurrently running
+	// tasks. If unset a default concurrency amount is used.
+	MaxConcurrency int
 }
 
 // NewBot creates a new bot instance.
@@ -58,7 +65,14 @@ func NewBot(name string, opts BotOpts) (*Bot, error) {
 		logger.Warn("No notifiers were specified, no notifications will be sent")
 	}
 
-	taskLock := sync.RWMutex{}
+	if opts.MaxConcurrency < 0 {
+		return nil, fmt.Errorf(
+			"Invalid concurrency setting, must be non-negative but was %d",
+			opts.MaxConcurrency,
+		)
+	} else if opts.MaxConcurrency == 0 {
+		opts.MaxConcurrency = defaultWorkerCount
+	}
 
 	bot := Bot{
 		name:              name,
@@ -67,9 +81,8 @@ func NewBot(name string, opts BotOpts) (*Bot, error) {
 		notifiers:         opts.Notifiers,
 		notificationLevel: opts.NotificationLevel,
 		cronScheduler:     cron.New(),
-		workQueue:         newWorkQueue(),
-		taskLock:          &taskLock,
-		taskNotifier:      sync.NewCond(taskLock.RLocker()),
+		workerCount:       opts.MaxConcurrency,
+		workQueue:         make(chan Task),
 	}
 
 	return &bot, nil
@@ -80,41 +93,26 @@ func (bot *Bot) Start() {
 	bot.logger.Infof("Starting bot %s", bot.name)
 	bot.notifyDebug("Starting bot", "Bot is being started up")
 
-	shouldStop := false
-
-	bot.taskLock.RLock()
-
 	taskWaitGroup := sync.WaitGroup{}
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		<-signals
+	for index := 0; index < bot.workerCount; index++ {
+		go func() {
+			for task := range bot.workQueue {
+				task.Handler()
+			}
 
-		shouldStop = true
-		bot.taskNotifier.Signal()
-	}()
+			taskWaitGroup.Done()
+		}()
+		taskWaitGroup.Add(1)
+	}
 
 	bot.cronScheduler.Start()
-	for !shouldStop {
-		for !shouldStop && bot.workQueue.IsEmpty() {
-			bot.taskNotifier.Wait()
-		}
-
-		if shouldStop {
-			break
-		}
-
-		task := bot.workQueue.Pop()
-		taskWaitGroup.Add(1)
-		go func() {
-			defer taskWaitGroup.Done()
-
-			task.Handler()
-		}()
-	}
+	<-signals
 	bot.cronScheduler.Stop()
+	close(bot.workQueue)
 
 	bot.logger.Debug("Waiting for running tasks to complete")
 	taskWaitGroup.Wait()
@@ -128,8 +126,7 @@ func (bot *Bot) ScheduleTask(schedule string, task Task) {
 	_, err := bot.cronScheduler.AddFunc(schedule, func() {
 		bot.logger.Infof("Queuing task: %v", task)
 
-		bot.workQueue.Push(task)
-		bot.taskNotifier.Signal()
+		bot.workQueue <- task
 	})
 
 	if err != nil {
@@ -137,6 +134,7 @@ func (bot *Bot) ScheduleTask(schedule string, task Task) {
 			"Unable schedule task",
 			fmt.Sprintf("%s was unable to schedule '%s' task", bot.name, task.Name),
 		)
+		bot.logger.Errorf("Unable to schedule task '%s': %v", task, err)
 	}
 }
 
