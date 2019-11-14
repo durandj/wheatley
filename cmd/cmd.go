@@ -5,18 +5,24 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/gobuffalo/envy"
 	"github.com/logrusorgru/aurora"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/durandj/wheatley/botbuilder"
 	"github.com/durandj/wheatley/botbuilder/notifier"
 	wheatleyNotifier "github.com/durandj/wheatley/notifier"
 )
 
+const (
+	pushBulletTokenKey = "pushbullet_token"
+)
+
 var (
 	notificationLevelPattern = regexp.MustCompile("^debug|info|warn|error$")
+	defaultConfigPath        = os.ExpandEnv("$HOME/.config/wheatley.yml")
 
+	configFilePath    string
 	maxWorkers        int
 	notificationLevel string
 )
@@ -32,16 +38,16 @@ var rootCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		loadDotEnv()
+		setupConfig()
 
-		pushBulletAPIToken, err := envy.MustGet("PUSHBULLET_API_TOKEN")
-		if err != nil {
+		if !viper.IsSet(pushBulletTokenKey) {
 			fmt.Println("Missing PushBullet API token, set PUSHBULLET_API_TOKEN")
 			os.Exit(1)
 		}
+		pushBulletToken := viper.GetString(pushBulletTokenKey)
 
 		notifiers := []notifier.Notifier{
-			wheatleyNotifier.NewPushBulletNotifier(pushBulletAPIToken),
+			wheatleyNotifier.NewPushBulletNotifier(pushBulletToken),
 		}
 
 		opts := botbuilder.BotOpts{
@@ -85,18 +91,32 @@ func isNotificationLevelValid(notificationLevel string) bool {
 	return notificationLevelPattern.MatchString(notificationLevel)
 }
 
-func loadDotEnv() {
-	if _, err := os.Stat(".env"); os.IsNotExist(err) {
-		return
-	}
+func setupConfig() {
+	viper.SetConfigFile("wheatley")
+	viper.SetConfigFile("/etc/wheatley")
+	viper.AddConfigPath("$HOME/.config")
+	viper.SetEnvPrefix("wheatley")
 
-	if err := envy.Load(".env"); err != nil {
-		fmt.Printf("Unable to load .env: %v", err)
+	// The only possible error that can be returned is for no
+	// arguments being passed. As we're providing an argument, the
+	// return value isn't helpful.
+	// nolint:errcheck,gosec
+	viper.BindEnv(pushBulletTokenKey)
+
+	if configFilePath != "" {
+		viper.SetConfigFile(configFilePath)
 	}
 }
 
 func init() {
 	flags := rootCmd.Flags()
+
+	flags.StringVar(
+		&configFilePath,
+		"config",
+		defaultConfigPath,
+		"The file path to load configuration from",
+	)
 
 	flags.StringVar(
 		&notificationLevel,
